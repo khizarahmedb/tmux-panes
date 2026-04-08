@@ -1,0 +1,28 @@
+{
+  "name": "tmux-panes",
+  "version": "0.1.0",
+  "description": "A beautiful TUI dashboard for monitoring tmux panes with AI agent detection",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "tmux-panes": "./bin/tmux-panes"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile bin/tmux-panes-bin"
+  },
+  "keywords": ["tmux", "tui", "terminal", "monitor", "dashboard", "ai-agents", "opentui"],
+  "license": "MIT",
+  "author": "Khizar Ahmed",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/khizarahmedb/tmux-panes"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.97"
+  }
+}

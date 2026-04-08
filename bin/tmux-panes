@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Launcher script — runs the OpenTUI app via bun
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec bun run "$SCRIPT_DIR/src/index.ts" "$@"

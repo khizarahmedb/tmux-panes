@@ -1,0 +1,7 @@
+node_modules/
+bin/tmux-panes-bin
+*.dylib
+.DS_Store
+bun.lock
+AGENTS.md
+AGENT_NOTES.md
