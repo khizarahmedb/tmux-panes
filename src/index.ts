@@ -76,6 +76,12 @@ function safeExit(code: number, message?: string, error?: unknown): never {
   process.exit(code);
 }
 
+function renderCurrentSnapshot(): void {
+  if (lastSnapshot) {
+    renderSnapshot(lastSnapshot);
+  }
+}
+
 function panePrimaryProcess(procs: PaneProcess[]): string {
   const primary = procs[0];
   if (!primary) return "";
@@ -195,6 +201,11 @@ function applyFilter(panes: TmuxPane[]): TmuxPane[] {
 
 function buildSummaryBar(snapshot: PaneSnapshot, filteredPanes: TmuxPane[]): ReturnType<typeof Box> {
   const sortLabel = sortBy === "default" ? "default" : sortBy;
+  const filterLabel = filterMode === "all"
+    ? "all"
+    : filterMode === "active"
+      ? "active-only"
+      : "idle-only";
   const time = snapshot.timestamp.toLocaleTimeString("en-US", { hour12: false });
 
   return Box(
@@ -205,11 +216,11 @@ function buildSummaryBar(snapshot: PaneSnapshot, filteredPanes: TmuxPane[]): Ret
       paddingBottom: 0,
     },
     Text({
-      content: `  [q] quit  [i] shell-idle:${showIdle ? "on" : "off"}  [f] filter:${filterMode}  [s] cpu  [m] mem  [r] refresh  ${time}`,
+      content: `  [q] quit  [i] shell-idle:${showIdle ? "on" : "off"}  [f] filter:${filterLabel}  [s] cpu  [m] mem  [r] refresh  ${time}`,
       fg: theme.colors.dimText,
     }),
     Text({
-      content: `  agents ${snapshot.activeAgentCount}/${snapshot.agentCount} active  │  visible ${filteredPanes.length}/${snapshot.panes.length} panes  │  agent cpu ${snapshot.agentCpu.toFixed(1)}%  │  agent mem ${snapshot.agentRssMb}MB  │  tmux cpu ${snapshot.totalCpu.toFixed(1)}%  │  tmux mem ${snapshot.totalRssMb}MB`,
+      content: `  showing ${filterLabel}  │  agents ${snapshot.activeAgentCount}/${snapshot.agentCount} active  │  visible ${filteredPanes.length}/${snapshot.panes.length} panes  │  agent cpu ${snapshot.agentCpu.toFixed(1)}%  │  agent mem ${snapshot.agentRssMb}MB  │  tmux cpu ${snapshot.totalCpu.toFixed(1)}%  │  tmux mem ${snapshot.totalRssMb}MB`,
       fg: theme.colors.normalText,
     }),
     Text({
@@ -356,19 +367,19 @@ async function main() {
         break;
       case "i":
         showIdle = !showIdle;
-        buildView();
+        renderCurrentSnapshot();
         break;
       case "f":
         filterMode = filterMode === "all" ? "active" : filterMode === "active" ? "idle" : "all";
-        buildView();
+        renderCurrentSnapshot();
         break;
       case "s":
         sortBy = sortBy === "cpu" ? "default" : "cpu";
-        buildView();
+        renderCurrentSnapshot();
         break;
       case "m":
         sortBy = sortBy === "mem" ? "default" : "mem";
-        buildView();
+        renderCurrentSnapshot();
         break;
       case "r":
         buildView();
