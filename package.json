@@ -10,7 +10,13 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --compile --outfile bin/tmux-panes-bin"
+    "build": "bun build src/index.ts --compile --outfile bin/tmux-panes-bin",
+    "test": "bun test tests/",
+    "test:watch": "bun test --watch tests/",
+    "test:coverage": "bun test --coverage tests/",
+    "test:all": "bun run scripts/test-all.ts",
+    "lint": "tsc --noEmit",
+    "validate": "bun run lint && bun run test"
   },
   "keywords": ["tmux", "tui", "terminal", "monitor", "dashboard", "ai-agents", "opentui"],
   "license": "MIT",

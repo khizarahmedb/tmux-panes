@@ -94,6 +94,6 @@ export function humanSize(kb: number): string {
 }
 
 export function cpuBar(value: number, width: number = 20): string {
-  const filled = Math.min(Math.round(value / (100 / width)), width);
+  const filled = Math.max(0, Math.min(Math.round(value / (100 / width)), width));
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
