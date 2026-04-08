@@ -222,7 +222,15 @@ function buildFooter(snapshot: PaneSnapshot): ReturnType<typeof Box> {
 }
 
 async function buildView(): Promise<void> {
-  const snapshot = await collectPanes();
+  let snapshot;
+  try {
+    snapshot = await collectPanes();
+  } catch (err) {
+    console.error("\n❌ Error collecting tmux data:", err);
+    console.error("\nTip: Make sure tmux is installed and running");
+    console.error("   Run 'tmux list-panes -a' to verify");
+    process.exit(1);
+  }
 
   let filteredPanes = snapshot.panes;
   if (!showIdle) {
@@ -276,13 +284,26 @@ async function buildView(): Promise<void> {
 }
 
 async function main() {
-  renderer = await createCliRenderer({
-    exitOnCtrlC: true,
-    screenMode: "alternate-screen",
-    useMouse: true,
-    targetFps: 30,
-    maxFps: 60,
-  });
+  // Check if running in a terminal
+  if (!process.stdin.isTTY) {
+    console.error("Error: tmux-panes must be run in an interactive terminal");
+    console.error("Tip: Run directly in your shell, not through a pipe or script");
+    process.exit(1);
+  }
+
+  try {
+    renderer = await createCliRenderer({
+      exitOnCtrlC: true,
+      screenMode: "alternate-screen",
+      useMouse: true,
+      targetFps: 30,
+      maxFps: 60,
+    });
+  } catch (err) {
+    console.error("Error initializing TUI renderer:", err);
+    console.error("Tip: Make sure your terminal supports alternate screen mode");
+    process.exit(1);
+  }
 
   // Keyboard handling
   renderer.keyInput.on("keypress", (event) => {
