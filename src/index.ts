@@ -21,6 +21,33 @@ let sortBy: "default" | "cpu" | "mem" = "default";
 let renderer: CliRenderer;
 let updateTimer: ReturnType<typeof setInterval>;
 
+function clearRoot(): void {
+  if (!renderer) return;
+  for (const child of [...renderer.root.getChildren()]) {
+    renderer.root.remove(child.id);
+  }
+}
+
+function safeExit(code: number, message?: string, error?: unknown): never {
+  if (updateTimer) clearInterval(updateTimer);
+
+  if (renderer) {
+    try {
+      renderer.destroy();
+    } catch {
+      // best-effort terminal restore
+    }
+  }
+
+  if (message) {
+    const output = code === 0 ? console.log : console.error;
+    output(message);
+    if (error) output(error);
+  }
+
+  process.exit(code);
+}
+
 // Parse CLI args
 const args = process.argv.slice(2);
 if (args.includes("--idle")) showIdle = true;
@@ -226,10 +253,11 @@ async function buildView(): Promise<void> {
   try {
     snapshot = await collectPanes();
   } catch (err) {
-    console.error("\n❌ Error collecting tmux data:", err);
-    console.error("\nTip: Make sure tmux is installed and running");
-    console.error("   Run 'tmux list-panes -a' to verify");
-    process.exit(1);
+    safeExit(
+      1,
+      "\n❌ Error collecting tmux data.\n\nTip: Make sure tmux is installed and running.\nRun 'tmux list-panes -a' to verify.",
+      err,
+    );
   }
 
   let filteredPanes = snapshot.panes;
@@ -239,7 +267,7 @@ async function buildView(): Promise<void> {
   filteredPanes = sortPanes(filteredPanes);
 
   // Clear root and rebuild
-  renderer.root.clear();
+  clearRoot();
 
   // Layout: header + scrollable content + footer
   const header = buildHeader(snapshot);
@@ -286,9 +314,10 @@ async function buildView(): Promise<void> {
 async function main() {
   // Check if running in a terminal
   if (!process.stdin.isTTY) {
-    console.error("Error: tmux-panes must be run in an interactive terminal");
-    console.error("Tip: Run directly in your shell, not through a pipe or script");
-    process.exit(1);
+    safeExit(
+      1,
+      "Error: tmux-panes must be run in an interactive terminal\nTip: Run directly in your shell, not through a pipe or script",
+    );
   }
 
   try {
@@ -300,9 +329,11 @@ async function main() {
       maxFps: 60,
     });
   } catch (err) {
-    console.error("Error initializing TUI renderer:", err);
-    console.error("Tip: Make sure your terminal supports alternate screen mode");
-    process.exit(1);
+    safeExit(
+      1,
+      "Error initializing TUI renderer.\nTip: Make sure your terminal supports alternate screen mode.",
+      err,
+    );
   }
 
   // Keyboard handling
@@ -341,15 +372,20 @@ async function main() {
 }
 
 function cleanup() {
-  if (updateTimer) clearInterval(updateTimer);
-  if (renderer) renderer.destroy();
-  process.exit(0);
+  safeExit(0);
 }
 
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 
+process.on("uncaughtException", (err) => {
+  safeExit(1, "\n❌ Uncaught error while running tmux-panes.", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  safeExit(1, "\n❌ Unhandled promise rejection while running tmux-panes.", err);
+});
+
 main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
+  safeExit(1, "\n❌ Fatal error while starting tmux-panes.", err);
 });
