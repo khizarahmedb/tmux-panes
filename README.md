@@ -1,15 +1,18 @@
 # tmux-panes
 
-A beautiful TUI dashboard for monitoring tmux panes with AI agent detection. Built with [OpenTUI](https://opentui.com) for flicker-free differential rendering.
+A compact TUI dashboard for monitoring tmux panes and AI agent sessions. Built with [OpenTUI](https://opentui.com) for differential rendering and a fixed top summary bar.
 
 ## Features
 
-- **Live monitoring** — real-time CPU, memory, and process tree for every tmux pane
+- **Fixed top summary** — active agents, visible panes, agent resource usage, tmux resource usage, and system CPU/memory stay pinned at the top
+- **Scrollable pane list only** — the summary stays fixed while the pane list scrolls
+- **Compact cards** — denser single-column cards fit more panes per window
+- **Live monitoring** — real-time CPU and memory for every tmux pane
 - **AI agent detection** — automatically identifies Claude Code, OpenCode, and Codex sessions
-- **Agent metadata** — shows model name, provider, token usage, and generation status
-- **Smart filtering** — hides idle shell panes by default, toggle with `i`
+- **Agent metadata** — shows model, provider, token/context usage, and generation status
+- **Smart filtering** — hide shell-idle panes with `i`, cycle pane filter with `f`
 - **Sorting** — sort by CPU or memory usage
-- **Scrollable** — mouse wheel support for long pane lists
+- **Graceful errors** — render an in-app error panel or stale-data banner instead of crashing
 - **No flicker** — OpenTUI's differential rendering only updates changed components
 
 ## What it shows
@@ -20,8 +23,8 @@ For AI agent panes:
 - Provider (Anthropic, OpenAI, etc.)
 - Status: `⟳ generating`, `⟳ working`, `● idle`
 - Token usage (OpenCode: `51.7K (25%)`)
-- CPU/memory with visual bar graphs
-- Full process tree
+- CPU and memory
+- Primary process / PID summary
 
 For regular panes:
 - Process name, PID, CPU, memory
@@ -58,6 +61,9 @@ tmux-panes
 # With options
 tmux-panes --idle        # Show idle shell panes
 tmux-panes -i 5          # 5 second refresh interval (default: 2)
+
+# Run from the repo directly
+./bin/tmux-panes
 ```
 
 ### Keyboard shortcuts
@@ -65,22 +71,38 @@ tmux-panes -i 5          # 5 second refresh interval (default: 2)
 | Key | Action |
 |-----|--------|
 | `q` | Quit |
-| `i` | Toggle idle panes |
+| `i` | Toggle shell-idle panes |
+| `f` | Cycle filter: all / active / idle |
 | `s` | Sort by CPU usage |
 | `m` | Sort by memory usage |
 | `r` | Force refresh |
 | `Ctrl+C` | Quit |
 
-Mouse scroll works in the pane list.
+Mouse scroll works in the pane list only.
 
 ## How it works
 
-1. Queries `tmux list-panes` for all pane metadata
-2. Reads `ps` for CPU/memory/process trees per pane PID
-3. Captures the last 50 lines of each active pane via `tmux capture-pane`
-4. Parses pane content to detect AI agents and extract model/status/usage
-5. Renders everything with OpenTUI's component-based layout engine
-6. Refreshes every 2 seconds with differential rendering (only changed components update)
+1. Queries `tmux list-panes` for pane metadata
+2. Reads `ps` for per-pane process CPU/memory
+3. Captures recent pane output via `tmux capture-pane`
+4. Detects Claude Code / OpenCode / Codex and extracts model/status/usage
+5. Collects system CPU/memory for the fixed summary bar
+6. Renders a fixed summary + scrollable pane list with OpenTUI
+7. Refreshes every 2 seconds with differential rendering
+
+## Layout
+
+- **Top bar**: controls, active agent counts, visible pane counts, tmux resource usage, and system resource usage
+- **Middle list**: compact pane cards, scrollable independently from the summary
+- **Error handling**: if live refresh fails, tmux-panes shows either:
+  - an in-app error panel on first load, or
+  - the last good snapshot with a stale-data banner
+
+## Notes
+
+- The pane list is intentionally scrollable; the entire app is not.
+- Shell-idle panes are hidden by default unless enabled with `--idle` or `i`.
+- Filtering with `f` cycles between `all`, `active`, and `idle` panes.
 
 ## Requirements
 

@@ -12,6 +12,13 @@ export interface PaneProcess {
   children: PaneProcess[];
 }
 
+export interface SystemStats {
+  cpuUsedPercent: number;
+  memUsedPercent: number;
+  memUsedMb: number;
+  memTotalMb: number;
+}
+
 export interface AgentInfo {
   type: "claude-code" | "opencode" | "codex" | "unknown";
   model: string;
@@ -48,13 +55,26 @@ export interface PaneSnapshot {
   totalRss: number;
   totalRssMb: number;
   agentCount: number;
+  activeAgentCount: number;
+  agentCpu: number;
+  agentRss: number;
+  agentRssMb: number;
   activeCount: number;
   idleCount: number;
+  system: SystemStats;
   timestamp: Date;
 }
 
 // Cache ps output per collection cycle
 let psCache: string = "";
+
+interface PsEntry {
+  pid: number;
+  ppid: number;
+  cpu: number;
+  rss: number;
+  command: string;
+}
 
 async function refreshPsCache(): Promise<void> {
   try {
@@ -87,6 +107,34 @@ function getChildProcesses(parentPid: number): PaneProcess[] {
     }
   }
   return children;
+}
+
+function getPsEntries(): PsEntry[] {
+  const entries: PsEntry[] = [];
+  const lines = psCache.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length < 6) continue;
+
+    const pid = parseInt(parts[0]);
+    const ppid = parseInt(parts[1]);
+    const cpu = parseFloat(parts[2]) || 0;
+    const rss = parseInt(parts[4]) || 0;
+    const command = parts.slice(5).join(" ");
+
+    if (!Number.isNaN(pid)) {
+      entries.push({ pid, ppid, cpu, rss, command });
+    }
+  }
+
+  return entries;
+}
+
+function getProcessByPid(pid: number): PsEntry | undefined {
+  return getPsEntries().find((entry) => entry.pid === pid);
 }
 
 function flattenProcesses(procs: PaneProcess[]): PaneProcess[] {
@@ -124,10 +172,12 @@ function detectAgent(command: string, capture: string): AgentInfo | undefined {
     const provider = "Anthropic";
     let status: AgentInfo["status"] = "unknown";
 
-    if (lastLines.includes("esc to interrupt")) {
+    if (lastLines.includes("esc to interrupt") || lastLines.includes("Esc to interrupt")) {
       status = "generating";
-    } else if (lastLines.includes("❯")) {
+    } else if (lastLines.includes("❯") || lastLines.includes("Press up to edit") || capture.includes("Claude Code v")) {
       status = "idle";
+    } else if (/⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏/.test(lastLines)) {
+      status = "working";
     }
 
     let usage = "";
@@ -222,12 +272,21 @@ export async function collectPanes(): Promise<PaneSnapshot> {
   let totalCpu = 0;
   let totalRss = 0;
   let agentCount = 0;
+  let activeAgentCount = 0;
+  let agentCpu = 0;
+  let agentRss = 0;
   let activeCount = 0;
   let idleCount = 0;
 
   for (const c of captures) {
-    const paneTotalCpu = c.allProcs.reduce((sum, p) => sum + p.cpu, 0);
-    const paneTotalRss = c.allProcs.reduce((sum, p) => sum + p.rss, 0);
+    const rootEntry = getProcessByPid(c.pid);
+    const includeRoot = !!rootEntry && !/^-?(zsh|bash|fish|sh)$/.test(c.command);
+    const paneProcesses = includeRoot && rootEntry
+      ? [{ pid: rootEntry.pid, cpu: rootEntry.cpu, rss: rootEntry.rss, command: rootEntry.command, children: c.children }]
+      : c.children;
+    const flattened = flattenProcesses(paneProcesses);
+    const paneTotalCpu = flattened.reduce((sum, p) => sum + p.cpu, 0);
+    const paneTotalRss = flattened.reduce((sum, p) => sum + p.rss, 0);
 
     const agent = c.isShellOnly ? undefined : detectAgent(c.displayCommand, c.capture);
 
@@ -247,8 +306,8 @@ export async function collectPanes(): Promise<PaneSnapshot> {
       totalCpu: parseFloat(paneTotalCpu.toFixed(1)),
       totalRss: paneTotalRss,
       rssMb: Math.round(paneTotalRss / 1024),
-      processCount: c.children.length,
-      processes: c.children,
+      processCount: flattened.length,
+      processes: paneProcesses,
     };
 
     panes.push(pane);
@@ -259,9 +318,16 @@ export async function collectPanes(): Promise<PaneSnapshot> {
       idleCount++;
     } else {
       activeCount++;
-      if (agent) agentCount++;
+      if (agent) {
+        agentCount++;
+        agentCpu += paneTotalCpu;
+        agentRss += paneTotalRss;
+        if (agent.status !== "idle" && agent.status !== "unknown") activeAgentCount++;
+      }
     }
   }
+
+  const system = await collectSystemStats();
 
   return {
     panes,
@@ -269,8 +335,71 @@ export async function collectPanes(): Promise<PaneSnapshot> {
     totalRss,
     totalRssMb: Math.round(totalRss / 1024),
     agentCount,
+    activeAgentCount,
+    agentCpu: parseFloat(agentCpu.toFixed(1)),
+    agentRss,
+    agentRssMb: Math.round(agentRss / 1024),
     activeCount,
     idleCount,
+    system,
     timestamp: new Date(),
   };
+}
+
+async function collectSystemStats(): Promise<SystemStats> {
+  try {
+    if (process.platform === "darwin") {
+      const [topOutput, memSizeOutput, vmStatOutput] = await Promise.all([
+        $`top -l 1 -n 0`.text(),
+        $`sysctl -n hw.memsize`.text(),
+        $`vm_stat`.text(),
+      ]);
+
+      const cpuMatch = topOutput.match(/CPU usage:\s+([\d.]+)% user,\s+([\d.]+)% sys,\s+([\d.]+)% idle/i);
+      const cpuUsedPercent = cpuMatch
+        ? parseFloat((parseFloat(cpuMatch[1]) + parseFloat(cpuMatch[2])).toFixed(1))
+        : 0;
+
+      const totalMemMb = Math.round(parseInt(memSizeOutput.trim(), 10) / 1024 / 1024);
+      const pageSizeMatch = vmStatOutput.match(/page size of (\d+) bytes/);
+      const pageSize = pageSizeMatch ? parseInt(pageSizeMatch[1], 10) : 4096;
+      const pageCount = (name: string) => {
+        const match = vmStatOutput.match(new RegExp(`${name}:\\s+(\\d+)\\.`));
+        return match ? parseInt(match[1], 10) : 0;
+      };
+
+      const usedPages =
+        pageCount("Pages active") +
+        pageCount("Pages wired down") +
+        pageCount("Pages occupied by compressor") +
+        pageCount("Pages speculative");
+      const memUsedMb = Math.round((usedPages * pageSize) / 1024 / 1024);
+      const memUsedPercent = totalMemMb > 0 ? parseFloat(((memUsedMb / totalMemMb) * 100).toFixed(1)) : 0;
+
+      return { cpuUsedPercent, memUsedPercent, memUsedMb, memTotalMb: totalMemMb };
+    }
+
+    const [topOutput, freeOutput] = await Promise.all([
+      $`top -bn1`.text(),
+      $`free -m`.text(),
+    ]);
+
+    const cpuMatch = topOutput.match(/%Cpu\(s\):\s+([\d.]+) us,\s+([\d.]+) sy,.*?\s+([\d.]+) id/);
+    const cpuUsedPercent = cpuMatch
+      ? parseFloat((100 - parseFloat(cpuMatch[3])).toFixed(1))
+      : 0;
+
+    const memLine = freeOutput.split("\n").find((line) => line.startsWith("Mem:"));
+    if (memLine) {
+      const parts = memLine.trim().split(/\s+/);
+      const totalMemMb = parseInt(parts[1], 10) || 0;
+      const memUsedMb = parseInt(parts[2], 10) || 0;
+      const memUsedPercent = totalMemMb > 0 ? parseFloat(((memUsedMb / totalMemMb) * 100).toFixed(1)) : 0;
+      return { cpuUsedPercent, memUsedPercent, memUsedMb, memTotalMb: totalMemMb };
+    }
+  } catch {
+    // fall through to safe default
+  }
+
+  return { cpuUsedPercent: 0, memUsedPercent: 0, memUsedMb: 0, memTotalMb: 0 };
 }

@@ -175,15 +175,23 @@ describe("Data collection integration", () => {
       expect(snapshot).toHaveProperty("totalRss");
       expect(snapshot).toHaveProperty("totalRssMb");
       expect(snapshot).toHaveProperty("agentCount");
+      expect(snapshot).toHaveProperty("activeAgentCount");
+      expect(snapshot).toHaveProperty("agentCpu");
+      expect(snapshot).toHaveProperty("agentRssMb");
       expect(snapshot).toHaveProperty("activeCount");
       expect(snapshot).toHaveProperty("idleCount");
+      expect(snapshot).toHaveProperty("system");
       expect(snapshot).toHaveProperty("timestamp");
 
       // Verify types
       expect(typeof snapshot.totalCpu).toBe("number");
       expect(typeof snapshot.totalRss).toBe("number");
       expect(typeof snapshot.agentCount).toBe("number");
+      expect(typeof snapshot.activeAgentCount).toBe("number");
+      expect(typeof snapshot.agentCpu).toBe("number");
       expect(snapshot.timestamp instanceof Date).toBe(true);
+      expect(typeof snapshot.system.cpuUsedPercent).toBe("number");
+      expect(typeof snapshot.system.memUsedPercent).toBe("number");
 
       // Verify panes array
       expect(Array.isArray(snapshot.panes)).toBe(true);
